@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
-import { generateChatResponse } from "../services/chatService";
+import { getAdvisorResponse } from "../services/bedrockClient";
+import { generateMockChatResponse } from "../services/chatService";
 import { ChatRequest } from "../types";
 
 const router = Router();
@@ -13,7 +14,11 @@ router.post("/", async (req: Request, res: Response) => {
       return;
     }
 
-    const response = await generateChatResponse(messages);
+    const useMock = process.env.USE_MOCK_CHATBOT === "true";
+    const response = useMock
+      ? await generateMockChatResponse(messages)
+      : await getAdvisorResponse(messages);
+
     res.json({ response });
   } catch (err) {
     console.error("Chat error:", err);

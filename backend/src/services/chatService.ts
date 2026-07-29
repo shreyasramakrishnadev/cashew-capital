@@ -11,10 +11,9 @@ function extractNumber(text: string): number | null {
 }
 
 /**
- * Mock LLM response generator.
- * Swap this function body with a Bedrock API call when ready.
+ * Mock LLM response generator — used when USE_MOCK_CHATBOT=true.
  */
-export async function generateChatResponse(
+export async function generateMockChatResponse(
   messages: ChatMessage[]
 ): Promise<string> {
   await randomLatency();

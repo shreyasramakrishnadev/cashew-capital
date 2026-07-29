@@ -1,0 +1,21 @@
+# k3s ships with Traefik as its default ingress controller — no extra
+# install needed. This routes incoming HTTP traffic (port 80, already
+# open in your security group) to the frontend Service.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cashew-frontend-ingress
+  namespace: cashew-capital
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cashew-frontend
+                port:
+                  number: 3000

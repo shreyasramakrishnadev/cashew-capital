@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cashew-backend
+  namespace: cashew-capital
+  labels:
+    app: cashew-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cashew-backend
+  template:
+    metadata:
+      labels:
+        app: cashew-backend
+    spec:
+      imagePullSecrets:
+        - name: ecr-registry-secret
+      containers:
+        - name: cashew-backend
+          # Pulled from Amazon ECR
+          image: 852845752811.dkr.ecr.us-east-1.amazonaws.com/cashew-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3001
+          env:
+            - name: PORT
+              value: "3001"
+            - name: USE_MOCK_CHATBOT
+              value: "false"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 20

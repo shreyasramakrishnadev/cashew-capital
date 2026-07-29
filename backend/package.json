@@ -8,6 +8,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1098.0",
     "cors": "^2.8.5",
     "express": "^4.21.2"
   },
