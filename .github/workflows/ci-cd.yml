@@ -96,54 +96,53 @@ jobs:
     name: Deploy to EC2/k3s
     needs: docker-build
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+      # No AWS credential setup needed — this runner IS the EC2 instance,
+      # which already has an IAM role attached (see cashew-capital-ec2-ecr-role)
 
       - name: Log in to Amazon ECR
         id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
+        run: |
+          aws ecr get-login-password --region us-east-1 | \
+          docker login --username AWS --password-stdin 852845752811.dkr.ecr.us-east-1.amazonaws.com
 
       - name: Build, tag, and push frontend image
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
         run: |
-          docker build -t $ECR_REGISTRY/cashew-frontend:${{ github.sha }} ./frontend
-          docker build -t $ECR_REGISTRY/cashew-frontend:latest ./frontend
-          docker push $ECR_REGISTRY/cashew-frontend:${{ github.sha }}
-          docker push $ECR_REGISTRY/cashew-frontend:latest
+          docker build -t 852845752811.dkr.ecr.us-east-1.amazonaws.com/cashew-frontend:${{ github.sha }} ./frontend
+          docker build -t 852845752811.dkr.ecr.us-east-1.amazonaws.com/cashew-frontend:latest ./frontend
+          docker push 852845752811.dkr.ecr.us-east-1.amazonaws.com/cashew-frontend:${{ github.sha }}
+          docker push 852845752811.dkr.ecr.us-east-1.amazonaws.com/cashew-frontend:latest
 
       - name: Build, tag, and push backend image
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
         run: |
-          docker build -t $ECR_REGISTRY/cashew-backend:${{ github.sha }} ./backend
-          docker build -t $ECR_REGISTRY/cashew-backend:latest ./backend
-          docker push $ECR_REGISTRY/cashew-backend:${{ github.sha }}
-          docker push $ECR_REGISTRY/cashew-backend:latest
+          docker build -t 852845752811.dkr.ecr.us-east-1.amazonaws.com/cashew-backend:${{ github.sha }} ./backend
+          docker build -t 852845752811.dkr.ecr.us-east-1.amazonaws.com/cashew-backend:latest ./backend
+          docker push 852845752811.dkr.ecr.us-east-1.amazonaws.com/cashew-backend:${{ github.sha }}
+          docker push 852845752811.dkr.ecr.us-east-1.amazonaws.com/cashew-backend:latest
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
+      # No kubeconfig secret needed either — kubectl already works locally
+      # on this instance, pointed at its own k3s cluster
 
-      - name: Configure kubeconfig
+      - name: Refresh ECR pull secret
         run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG_DATA }}" | base64 -d > ~/.kube/config
+          kubectl create secret docker-registry ecr-registry-secret \
+            --docker-server=852845752811.dkr.ecr.us-east-1.amazonaws.com \
+            --docker-username=AWS \
+            --docker-password=$(aws ecr get-login-password --region us-east-1) \
+            --namespace=cashew-capital \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy to cluster
         run: |
           kubectl set image deployment/cashew-frontend \
-            cashew-frontend=${{ steps.ecr-login.outputs.registry }}/cashew-frontend:${{ github.sha }} \
+            cashew-frontend=852845752811.dkr.ecr.us-east-1.amazonaws.com/cashew-frontend:${{ github.sha }} \
             -n cashew-capital
           kubectl set image deployment/cashew-backend \
-            cashew-backend=${{ steps.ecr-login.outputs.registry }}/cashew-backend:${{ github.sha }} \
+            cashew-backend=852845752811.dkr.ecr.us-east-1.amazonaws.com/cashew-backend:${{ github.sha }} \
             -n cashew-capital
           kubectl rollout status deployment/cashew-frontend -n cashew-capital
           kubectl rollout status deployment/cashew-backend -n cashew-capital
