@@ -24,11 +24,6 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
-          env:
-            - name: NEXT_PUBLIC_API_URL
-              # Internal cluster DNS name for the backend Service —
-              # Kubernetes auto-resolves this to the backend pod(s)
-              value: "http://cashew-backend.cashew-capital.svc.cluster.local:3001"
           resources:
             requests:
               cpu: "50m"
