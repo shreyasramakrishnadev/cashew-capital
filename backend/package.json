@@ -10,11 +10,13 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1098.0",
     "cors": "^2.8.5",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "morgan": "^1.11.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
+    "@types/morgan": "^1.9.10",
     "@types/node": "^20",
     "tsx": "^4.19.2",
     "typescript": "^5"
