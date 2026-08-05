@@ -14,16 +14,19 @@ spec:
     metadata:
       labels:
         app: cashew-frontend
+        version: v1.0.0
     spec:
       imagePullSecrets:
         - name: ecr-registry-secret
       containers:
         - name: cashew-frontend
-          # Pulled from Amazon ECR
           image: 852845752811.dkr.ecr.us-east-1.amazonaws.com/cashew-frontend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "http://cashew-backend.cashew-capital.svc.cluster.local:3001"
           resources:
             requests:
               cpu: "50m"
