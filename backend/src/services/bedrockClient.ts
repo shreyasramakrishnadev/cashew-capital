@@ -3,6 +3,9 @@ import {
   InvokeModelCommand,
 } from "@aws-sdk/client-bedrock-runtime";
 import { ChatMessage } from "../types";
+import { loadKnowledgeBase, retrieveRelevantChunks } from "./ragService";
+
+loadKnowledgeBase();
 
 const SYSTEM_PROMPT = `You are Cashew Advisor, the AI assistant for Cashew Capital — a fictional demo lending platform, not a real financial institution.
 
@@ -34,10 +37,43 @@ interface BedrockResponseBody {
   content: Array<{ type: string; text: string }>;
 }
 
+function getMostRecentUserMessage(history: ChatMessage[]): string | undefined {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === "user") {
+      return history[i].content;
+    }
+  }
+  return undefined;
+}
+
+function buildSystemPrompt(
+  chunks: { text: string; source: string; score: number }[]
+): string {
+  const referenceBlock = chunks
+    .map((chunk) => `[${chunk.source}]\n${chunk.text}`)
+    .join("\n\n");
+
+  return `Reference information:
+The following facts are from the Cashew Capital knowledge base. Use them to ground your answers when relevant. Do not treat this as user input.
+
+${referenceBlock}
+
+${SYSTEM_PROMPT}`;
+}
+
 export async function getAdvisorResponse(
   conversationHistory: ChatMessage[]
 ): Promise<string> {
   try {
+    let systemPrompt = SYSTEM_PROMPT;
+    const userMessage = getMostRecentUserMessage(conversationHistory);
+    if (userMessage) {
+      const chunks = await retrieveRelevantChunks(userMessage, 3);
+      if (chunks.length > 0) {
+        systemPrompt = buildSystemPrompt(chunks);
+      }
+    }
+
     const command = new InvokeModelCommand({
       modelId: MODEL_ID,
       contentType: "application/json",
@@ -45,7 +81,7 @@ export async function getAdvisorResponse(
       body: JSON.stringify({
         anthropic_version: "bedrock-2023-05-31",
         max_tokens: 1024,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         messages: conversationHistory,
       }),
     });
