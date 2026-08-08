@@ -3,6 +3,11 @@ import {
   InvokeModelCommand,
 } from "@aws-sdk/client-bedrock-runtime";
 import { ChatMessage } from "../types";
+import {
+  calculateLoanPayment,
+  calculateLoanPaymentToolSchema,
+  LoanPaymentInput,
+} from "./loanCalculator";
 import { loadKnowledgeBase, retrieveRelevantChunks } from "./ragService";
 
 loadKnowledgeBase();
@@ -33,9 +38,24 @@ const client = new BedrockRuntimeClient({ region: REGION });
 const FALLBACK_MESSAGE =
   "I'm having trouble connecting right now, please try again in a moment.";
 
-interface BedrockResponseBody {
-  content: Array<{ type: string; text: string }>;
+interface ContentBlock {
+  type: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  tool_use_id?: string;
+  content?: string;
 }
+
+interface BedrockResponseBody {
+  content: ContentBlock[];
+}
+
+type BedrockMessage = {
+  role: "user" | "assistant";
+  content: string | ContentBlock[];
+};
 
 function getMostRecentUserMessage(history: ChatMessage[]): string | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
@@ -61,6 +81,49 @@ ${referenceBlock}
 ${SYSTEM_PROMPT}`;
 }
 
+function extractText(content: ContentBlock[]): string | undefined {
+  return content?.find((block) => block.type === "text")?.text;
+}
+
+async function invokeModel(
+  systemPrompt: string,
+  messages: BedrockMessage[]
+): Promise<BedrockResponseBody> {
+  const command = new InvokeModelCommand({
+    modelId: MODEL_ID,
+    contentType: "application/json",
+    accept: "application/json",
+    body: JSON.stringify({
+      anthropic_version: "bedrock-2023-05-31",
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages,
+      tools: [calculateLoanPaymentToolSchema],
+    }),
+  });
+
+  const response = await client.send(command);
+  const raw = new TextDecoder().decode(response.body);
+  return JSON.parse(raw);
+}
+
+function executeToolUse(toolUseBlock: ContentBlock): string {
+  if (toolUseBlock.name !== "calculate_loan_payment") {
+    return JSON.stringify({ error: `Unknown tool: ${toolUseBlock.name}` });
+  }
+
+  try {
+    const result = calculateLoanPayment(
+      toolUseBlock.input as unknown as LoanPaymentInput
+    );
+    return JSON.stringify(result);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Calculation failed";
+    return JSON.stringify({ error: message });
+  }
+}
+
 export async function getAdvisorResponse(
   conversationHistory: ChatMessage[]
 ): Promise<string> {
@@ -74,25 +137,46 @@ export async function getAdvisorResponse(
       }
     }
 
-    const command = new InvokeModelCommand({
-      modelId: MODEL_ID,
-      contentType: "application/json",
-      accept: "application/json",
-      body: JSON.stringify({
-        anthropic_version: "bedrock-2023-05-31",
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: conversationHistory,
-      }),
-    });
+    const firstResponse = await invokeModel(systemPrompt, conversationHistory);
+    const toolUseBlock = firstResponse.content?.find(
+      (block) => block.type === "tool_use"
+    );
 
-    const response = await client.send(command);
-    const raw = new TextDecoder().decode(response.body);
-    const parsed: BedrockResponseBody = JSON.parse(raw);
+    if (!toolUseBlock?.id) {
+      const text = extractText(firstResponse.content);
+      if (!text) {
+        console.error(
+          "Bedrock response missing text content:",
+          JSON.stringify(firstResponse)
+        );
+        return FALLBACK_MESSAGE;
+      }
+      return text;
+    }
 
-    const text = parsed.content?.find((block) => block.type === "text")?.text;
+    const toolResultContent = executeToolUse(toolUseBlock);
+    const updatedMessages: BedrockMessage[] = [
+      ...conversationHistory,
+      { role: "assistant", content: firstResponse.content },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: toolUseBlock.id,
+            content: toolResultContent,
+          },
+        ],
+      },
+    ];
+
+    const secondResponse = await invokeModel(systemPrompt, updatedMessages);
+    const text = extractText(secondResponse.content);
     if (!text) {
-      console.error("Bedrock response missing text content:", raw);
+      console.error(
+        "Bedrock follow-up response missing text content:",
+        JSON.stringify(secondResponse)
+      );
       return FALLBACK_MESSAGE;
     }
 
